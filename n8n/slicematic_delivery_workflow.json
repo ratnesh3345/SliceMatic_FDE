@@ -1,0 +1,119 @@
+{
+  "name": "SliceMatic — Out for Delivery Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "slicematic-delivery",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-del",
+      "name": "Delivery Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        0
+      ],
+      "webhookId": "slicematic-delivery"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build the \"out for delivery\" message for the customer.\nconst o = $input.first().json.body ?? $input.first().json;\nconst digits = String(o.phone || '').replace(/\\D/g, '').replace(/^0+/, '');\nconst customerPhone = digits.length === 10 ? '91' + digits : digits;\nconst order = o.orderId ? '#' + o.orderId : '';\nconst customerMessage =\n  `🛵 Good news, ${o.name}! Your SliceMatic order ${order} is OUT FOR DELIVERY.\\n` +\n  `${o.itemsSummary || ''}\\n` +\n  `Heading to: ${o.address || 'your address'}\\n` +\n  `It'll reach you in about 15 minutes. Keep your phone handy!`;\nreturn [{ json: { customerPhone, customerMessage } }];"
+      },
+      "id": "bm-del",
+      "name": "Build delivery message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -140,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v21.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $('Build delivery message').item.json.customerPhone, type: 'text', text: { body: $('Build delivery message').item.json.customerMessage } }) }}",
+        "options": {}
+      },
+      "id": "wa-del",
+      "name": "WhatsApp → Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}",
+        "options": {}
+      },
+      "id": "resp-del",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Delivery Webhook": {
+      "main": [
+        [
+          {
+            "node": "Build delivery message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build delivery message": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp → Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp → Customer": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

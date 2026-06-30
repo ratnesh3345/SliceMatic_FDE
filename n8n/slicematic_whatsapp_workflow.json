@@ -1,0 +1,161 @@
+{
+  "name": "SliceMatic — Order WhatsApp Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "slicematic-order",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Order Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "slicematic-order"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Read the order (webhook body) and build the two messages.\nconst o = $input.first().json.body ?? $input.first().json;\n\n// Normalise the Indian mobile to WhatsApp format: 91 + 10 digits.\nconst digits = String(o.phone || '').replace(/\\D/g, '').replace(/^0+/, '');\nconst customerPhone = digits.length === 10 ? '91' + digits : digits;\n\n// >>> SET THE OWNER'S / STAFF WHATSAPP NUMBER HERE (country code + number, no +) <<<\nconst ownerPhone = '91XXXXXXXXXX';\n\nconst rupees = (n) => 'Rs.' + Number(n || 0).toFixed(2);\nconst order = o.orderId ? '#' + o.orderId : '';\nconst items = o.itemsSummary || 'your order';\nconst addr  = o.address || 'address on file';\n\nconst customerMessage =\n  `Hi ${o.name}, thanks for ordering with SliceMatic! 🍕\\n\\n` +\n  `Your order ${order} is confirmed ✅\\n` +\n  `--------------------------------\\n` +\n  `${items}\\n` +\n  `--------------------------------\\n` +\n  `Amount: ${rupees(o.total)} (${o.payment_mode})\\n` +\n  `🛵 Delivering to: ${addr}\\n\\n` +\n  `Arriving hot in ~30 minutes. See you soon!`;\n\nconst ownerMessage =\n  `🔔 NEW ORDER ${order}\\n` +\n  `--------------------------------\\n` +\n  `${items}\\n` +\n  `Total pizzas: ${o.quantity}\\n` +\n  `--------------------------------\\n` +\n  `Subtotal: ${rupees(o.subtotal)}\\n` +\n  `Discount: ${rupees(o.discount)}\\n` +\n  `GST: ${rupees(o.gst)}\\n` +\n  `TOTAL: ${rupees(o.total)} (${o.payment_mode})\\n\\n` +\n  `📍 Deliver to: ${addr}` + (o.geo ? ` (pin: ${o.geo})` : '') + `\\n` +\n  `👤 ${o.name} · +${customerPhone}\\n` +\n  `⏱️ Start prep now — 30-min SLA.`;\n\nreturn [{ json: { customerPhone, ownerPhone, customerMessage, ownerMessage } }];"
+      },
+      "id": "code-node",
+      "name": "Build messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v21.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $('Build messages').item.json.customerPhone, type: 'text', text: { body: $('Build messages').item.json.customerMessage } }) }}",
+        "options": {}
+      },
+      "id": "wa-customer",
+      "name": "WhatsApp → Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v21.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $('Build messages').item.json.ownerPhone, type: 'text', text: { body: $('Build messages').item.json.ownerMessage } }) }}",
+        "options": {}
+      },
+      "id": "wa-owner",
+      "name": "WhatsApp → Owner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}",
+        "options": {}
+      },
+      "id": "respond-node",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Order Webhook": {
+      "main": [
+        [
+          {
+            "node": "Build messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build messages": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp → Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp → Customer": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp → Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp → Owner": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
