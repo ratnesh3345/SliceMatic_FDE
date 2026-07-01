@@ -11,8 +11,10 @@ const FLOW = {
 };
 
 export default function AdminPage() {
-  const [authed, setAuthed] = useState(false);
-  const [password, setPassword] = useState("");
+ const [authed, setAuthed] = useState(false);
+const [user, setUser] = useState(null);
+const [username, setUsername] = useState("");
+const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [orders, setOrders] = useState([]);
   const [from, setFrom] = useState("");
@@ -21,10 +23,25 @@ export default function AdminPage() {
   const [statusF, setStatusF] = useState("All");
   const [busy, setBusy] = useState(null);
 
+  // Restore login from the shared session flag (set by either admin tab).
+  useEffect(() => {
+  try {
+    const stored = sessionStorage.getItem("sm_user");
+
+    if (stored) {
+      const currentUser = JSON.parse(stored);
+
+      setUser(currentUser);
+      setAuthed(true);
+    }
+  } catch {}
+}, []);
+
   const fetchOrders = useCallback(async () => {
     try {
       const r = await fetch("/api/orders", { cache: "no-store" });
       const d = await r.json();
+      console.log("LOGIN RESPONSE:", d);
       setOrders(d.orders || []);
     } catch {}
   }, []);
@@ -41,11 +58,41 @@ export default function AdminPage() {
     setAuthError("");
     const r = await fetch("/api/admin/login", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ username,
+      password }),
     });
     const d = await r.json();
-    if (d.ok) setAuthed(true); else setAuthError("Wrong password.");
+    console.log("LOGIN RESPONSE:", d);
+   if (d.ok) {
+
+  const currentUser = {
+    username: d.user.username,
+    role: d.user.role,
+  };
+
+  try {
+    sessionStorage.setItem(
+      "sm_user",
+      JSON.stringify(currentUser)
+    );
+  } catch {}
+
+  setUser(currentUser);
+  setAuthed(true);
+}
+    else setAuthError("Wrong Username or password.");
   }
+
+
+  function signOut() {
+
+  try {
+    sessionStorage.removeItem("sm_user");
+  } catch {}
+
+  setUser(null);
+  setAuthed(false);
+}
 
   async function advance(o) {
     const next = FLOW[o.status]?.next;
@@ -97,29 +144,62 @@ export default function AdminPage() {
     URL.revokeObjectURL(url);
   }
 
-  if (!authed) {
-    return (
-      <Shell>
-        <form onSubmit={signIn} className="bg-panel border border-line rounded-2xl p-6 max-w-sm shadow-card">
-          <h2 className="font-display font-bold text-xl mb-1">Staff sign in</h2>
-          <p className="text-[12px] text-muted mb-3">Default password: <code>slicematic123</code> (set <code>ADMIN_PASSWORD</code> to change).</p>
-          <input type="password" className="w-full mb-3 rounded-xl border border-line px-3 py-2.5 text-[14px] outline-none focus:border-brand"
-            placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          {authError && <p className="text-brand text-[12px] mb-2">{authError}</p>}
-          <button className="w-full rounded-xl bg-brand hover:bg-branddark text-white font-semibold py-2.5">Sign in</button>
-        </form>
-      </Shell>
-    );
-  }
+if (!authed) {
+  return (
+    <main className="min-h-screen flex items-center justify-center bg-paper">
+      <form
+        onSubmit={signIn}
+        className="bg-panel border border-line rounded-2xl p-6 max-w-sm w-full shadow-card"
+      >
+        <h1 className="font-display font-extrabold text-3xl text-brand mb-2">
+          SliceMatic
+        </h1>
+
+        <h2 className="font-display font-bold text-xl mb-1">
+          Staff Sign In
+        </h2>
+
+        <p className="text-[12px] text-muted mb-3">
+  Sign in with your username and password.
+</p>
+<input
+  type="text"
+  className="w-full mb-3 rounded-xl border border-line px-3 py-2.5 text-[14px] outline-none focus:border-brand"
+  placeholder="Username"
+  value={username}
+  onChange={(e) => setUsername(e.target.value)}
+/>
+
+        <input
+          type="password"
+          className="w-full mb-3 rounded-xl border border-line px-3 py-2.5 text-[14px] outline-none focus:border-brand"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+
+        {authError && (
+          <p className="text-brand text-[12px] mb-2">
+            {authError}
+          </p>
+        )}
+
+        <button className="w-full rounded-xl bg-brand hover:bg-branddark text-white font-semibold py-2.5">
+          Sign In
+        </button>
+      </form>
+    </main>
+  );
+}
 
   return (
-    <Shell>
+   <Shell user={user}>
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="font-display font-extrabold text-2xl">Kitchen dashboard</h1>
           <p className="text-[12px] text-muted">Live · refreshes every 5s</p>
         </div>
-        <button onClick={() => setAuthed(false)} className="text-[13px] text-muted hover:text-ink">Sign out</button>
+        <button onClick={signOut} className="text-[13px] text-muted hover:text-ink">Sign out</button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
@@ -185,16 +265,54 @@ export default function AdminPage() {
   );
 }
 
-function Shell({ children }) {
+function Shell({ children, user }) {
   return (
     <main className="min-h-screen">
       <header className="border-b border-line bg-paper/70 backdrop-blur">
         <div className="max-w-5xl mx-auto px-5 h-16 flex items-center justify-between">
-          <span className="font-display font-extrabold text-2xl tracking-tight text-brand">SliceMatic</span>
-          <Link href="/" className="text-[13px] text-muted hover:text-ink">← Storefront</Link>
+
+          <div className="flex items-center gap-6">
+
+            <span className="font-display font-extrabold text-2xl tracking-tight text-brand">
+              SliceMatic
+            </span>
+
+            <nav className="flex gap-3">
+
+              <Link
+                href="/admin"
+                className="text-[13px] font-semibold px-3 py-1 rounded-lg bg-green-100 text-green-700 hover:bg-green-200"
+              >
+                Orders
+              </Link>
+
+              {user?.role === "OWNER" && (
+                <Link
+                  href="/admin/analytics"
+                  className="text-[13px] font-semibold px-3 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
+                >
+                  Business Insight
+                </Link>
+              )}
+
+            </nav>
+
+          </div>
+
+          <Link
+            href="/"
+            className="text-[13px] text-muted hover:text-ink"
+          >
+            ← Storefront
+          </Link>
+
         </div>
       </header>
-      <div className="max-w-5xl mx-auto px-5 py-8">{children}</div>
+
+      <div className="max-w-5xl mx-auto px-5 py-8">
+        {children}
+      </div>
+
     </main>
   );
 }
