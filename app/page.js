@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { track } from "@/lib/tracker";
 import Link from "next/link";
 import Receipt from "@/components/Receipt";
 import { loadMenu } from "@/lib/menu";
@@ -60,7 +61,7 @@ export default function OrderPage() {
   const [submitError, setSubmitError] = useState("");
   const [authMode, setAuthMode] = useState("");
 
-  useEffect(() => { loadMenu().then(({ menu, source }) => { setMenu(menu); setSource(source); }); }, []);
+  useEffect(() => { track("LANDING_VIEWED"); loadMenu().then(({ menu, source }) => { setMenu(menu); setSource(source); }); }, []);
 
   const nameErr = validateName(name);
   const phoneErr = validatePhone(phone);
@@ -82,7 +83,17 @@ export default function OrderPage() {
   async function goToBuild() {
     setTouched({ name: true, phone: true, building: true, area: true, pincode: true });
     if (nameErr || phoneErr || addrErr) return;
+    await track("CUSTOMER_DETAILS_SUBMITTED", {
+
+    customer_name: name,
+
+    phone,
+
+    address: formatAddress(address),
+
+});
     setStep("build");
+    await track("MENU_VIEWED");
     setRec({ loading: true, text: "", model: "" });
     try {
       const r = await fetch("/api/recommend", {
@@ -99,6 +110,36 @@ export default function OrderPage() {
     const e = validateSelection(bBase, "crust") || validateSelection(bPizza, "pizza") || bQtyErr;
     if (e) { setSubmitError(e); return; }
     setCart((c) => [...c, { base: bBase, pizza: bPizza, topping: bTopping, quantity: parseInt(bQty, 10) }]);
+    track("ITEM_ADDED", {
+
+    customer_name: name,
+
+    phone,
+
+    cart_value: computeCart([
+        ...cart,
+        {
+            base: bBase,
+            pizza: bPizza,
+            topping: bTopping,
+            quantity: parseInt(bQty,10),
+        }
+    ]).total,
+
+    metadata: {
+
+        pizza: bPizza.name,
+
+        crust: bBase.name,
+
+        topping: bTopping?.name,
+
+        quantity: parseInt(bQty,10),
+
+    }
+
+});
+    
     setBBase(null); setBPizza(null); setBTopping(null); setBQty("1");
   }
 
@@ -110,6 +151,19 @@ export default function OrderPage() {
     if (!payment) { setSubmitError("Choose a payment mode."); return; }
 
     const finalBill = computeCart(cart);
+    await track("CHECKOUT_STARTED", {
+
+    customer_name: name,
+
+    phone,
+
+    address: formatAddress(address),
+
+    cart_value: finalBill.total,
+
+    item_count: finalBill.totalPizzas,
+
+});
 
     // Simulated authorisation step for Card / UPI (no real card data).
     if (payment === "Card" || payment === "UPI") {
@@ -141,6 +195,27 @@ export default function OrderPage() {
       });
       const data = await res.json();
       id = data.id; persisted = !!data.persisted;
+      await track("ORDER_PLACED", {
+
+    customer_name: name,
+
+    phone,
+
+    address: formatAddress(address),
+
+    cart_value: finalBill.total,
+
+    item_count: finalBill.totalPizzas,
+
+    metadata: {
+
+        order_id: id,
+
+        payment: payment,
+
+    }
+
+});
     } catch { /* keep checkout resilient */ }
 
     setConfirm({ id, persisted, bill: finalBill, timestamp, address: fullAddress });
