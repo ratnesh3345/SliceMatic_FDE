@@ -1,3 +1,4 @@
+
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { track } from "@/lib/tracker";
@@ -8,6 +9,8 @@ import {
   computeCart, validateName, validatePhone, validateQuantity, validateSelection,
   validateAddress, formatAddress, paymentConfirmation, PAYMENT_MODES, RULES, formatINR,
 } from "@/lib/pricing";
+import { checkDeliverable } from "@/lib/geo";
+import Vani from "@/components/Vani";
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -60,6 +63,7 @@ export default function OrderPage() {
   const [confirm, setConfirm] = useState(null);
   const [submitError, setSubmitError] = useState("");
   const [authMode, setAuthMode] = useState("");
+  const [zoneErr, setZoneErr] = useState("");
 
   useEffect(() => { track("LANDING_VIEWED"); loadMenu().then(({ menu, source }) => { setMenu(menu); setSource(source); }); }, []);
 
@@ -83,6 +87,10 @@ export default function OrderPage() {
   async function goToBuild() {
     setTouched({ name: true, phone: true, building: true, area: true, pincode: true });
     if (nameErr || phoneErr || addrErr) return;
+    // Delivery zone check — block if outside 5km
+    setZoneErr("");
+    const zone = checkDeliverable(geo, address.pincode);
+    if (!zone.ok) { setZoneErr(zone.reason); return; }
     await track("CUSTOMER_DETAILS_SUBMITTED", {
 
     customer_name: name,
@@ -297,6 +305,13 @@ export default function OrderPage() {
               <button type="button" onClick={detectLocation}
                 className="text-[12px] text-brand font-semibold hover:underline mb-1">📍 Use my current location</button>
               {geoMsg && <div className="text-[12px] text-muted mb-2">{geoMsg}</div>}
+              {zoneErr && (
+                <div className="rounded-xl border border-brand/40 bg-brand/5 p-3 mb-2">
+                  <div className="text-[13px] font-semibold text-brand">🚫 Outside delivery zone</div>
+                  <div className="text-[12px] text-ink/80 mt-1">{zoneErr}</div>
+                  <div className="text-[11px] text-muted mt-1">We serve New Ashok Nagar and nearby areas within 5 km. Call us at 98xxx xxxxx to check.</div>
+                </div>
+              )}
 
               <button onClick={goToBuild}
                 className="w-full mt-3 rounded-xl bg-brand hover:bg-branddark text-white font-semibold py-3 transition">
@@ -429,6 +444,31 @@ export default function OrderPage() {
           </div>
         </aside>
       </div>
+      <Vani
+        orderId={confirm?.id}
+        orderStatus={confirm ? "PLACED" : undefined}
+        customerName={name}
+        phone={phone}
+      />
+      {/* <button
+        style={{
+          position: "fixed",
+          bottom: 24,
+          right: 24,
+          zIndex: 999999,
+          width: 60,
+          height: 60,
+          borderRadius: "50%",
+          background: "red",
+          color: "white",
+          fontSize: 24,
+          border: "none",
+          cursor: "pointer",
+        }}
+      >
+        💬
+      </button> */}
     </main>
   );
+  
 }

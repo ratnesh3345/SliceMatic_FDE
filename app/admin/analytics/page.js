@@ -85,8 +85,60 @@ export default function AnalyticsPage() {
   const [err, setErr] = useState("");
   const [period, setPeriod] = useState(30);      // 7 | 30 | "all"
   const [selHour, setSelHour] = useState(null);
+  const [authed, setAuthed] = useState(false);
+  const [checked, setChecked] = useState(false);
+//   const [pw, setPw] = useState("");
+//   const [authErr, setAuthErr] = useState("");
 
   useEffect(() => {
+
+    try{
+
+        const user = JSON.parse(
+            sessionStorage.getItem("sm_user")
+        );
+
+        if(!user){
+
+            window.location.href="/admin";
+            return;
+
+        }
+
+        if(user.role!=="OWNER"){
+
+            window.location.href="/admin";
+            return;
+
+        }
+
+        setAuthed(true);
+
+    }
+
+    catch{
+
+        window.location.href="/admin";
+
+    }
+
+    setChecked(true);
+
+},[]);
+
+//   async function signIn(e) {
+//     e.preventDefault(); setAuthErr("");
+//     try {
+//       const r = await fetch("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw }) });
+//       const d = await r.json();
+//       if (d.ok) { try { sessionStorage.setItem( "sm_user",
+//         JSON.stringify(d.user)); } catch {} setAuthed(true); }
+//       else setAuthErr("Wrong password.");
+//     } catch { setAuthErr("Sign-in failed."); }
+//   }
+
+  useEffect(() => {
+    if (!authed) return;
     (async () => {
       try {
         const [a, b, c, d] = await Promise.all([
@@ -100,7 +152,7 @@ export default function AnalyticsPage() {
       } catch (e) { setErr(e.message || "Could not load analytics."); }
       finally { setLoading(false); }
     })();
-  }, []);
+  }, [authed]);
 
   const m = useMemo(() => {
     if (!rows.length) return null;
@@ -142,7 +194,25 @@ export default function AnalyticsPage() {
       liveCount: R.filter((r) => r.is_sample === false).length };
   }, [rows, cost, period]);
 
-  if (loading) return <Wrap><p style={{ color: MUTED }}>Loading analytics…</p></Wrap>;
+  if (!checked) return null;
+
+if (!authed) {
+    return null;
+}
+//   if (!checked) return null;
+//   if (!authed) return (
+//     <Wrap active="analytics">
+//       <form onSubmit={signIn} style={{ maxWidth: 360, background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, padding: 24, boxShadow: "0 8px 24px rgba(26,22,20,.06)" }}>
+//         <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Staff sign in</h2>
+//         <p style={{ fontSize: 12, color: MUTED, margin: "6px 0 12px" }}>Same password as the Orders dashboard.</p>
+//         <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Password"
+//           style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: `1px solid ${LINE}`, fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+//         {authErr && <p style={{ color: BRAND, fontSize: 12, margin: "8px 0 0" }}>{authErr}</p>}
+//         <button type="submit" style={{ width: "100%", marginTop: 12, padding: 10, borderRadius: 12, border: "none", background: BRAND, color: "#fff", fontWeight: 700, cursor: "pointer" }}>Sign in</button>
+//       </form>
+//     </Wrap>
+//   );
+  if (loading) return <Wrap active="analytics"><p style={{ color: MUTED }}>Loading analytics…</p></Wrap>;
   if (err) return <Wrap><Card><b>Couldn't load analytics.</b><div style={{ color: MUTED, fontSize: 13, marginTop: 6 }}>{err}</div>
     <div style={{ color: MUTED, fontSize: 12, marginTop: 8 }}>Run <code>analytics_setup.sql</code> + <code>analytics_addon.sql</code>, and check env keys.</div></Card></Wrap>;
   if (!m || m.empty) return <Wrap active="analytics"><PeriodBar period={period} setPeriod={setPeriod} /><p style={{ color: MUTED, marginTop: 12 }}>No orders in this period.</p></Wrap>;

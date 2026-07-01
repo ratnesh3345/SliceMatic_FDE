@@ -277,25 +277,48 @@ function Shell({ children, user }) {
               SliceMatic
             </span>
 
-            <nav className="flex gap-3">
+           <nav
+  style={{
+    display: "flex",
+    gap: 4,
+    background: "#fff",
+    border: "1px solid #E7DDD2",
+    borderRadius: 999,
+    padding: 3,
+  }}
+>
+    <a
+        href="/admin"
+        style={{
+            fontSize:13,
+            fontWeight:600,
+            textDecoration:"none",
+            padding:"6px 12px",
+            borderRadius:999,
+            color:"#fff",
+            background:"#E11D74"
+        }}
+    >
+        Orders
+    </a>
 
-              <Link
-                href="/admin"
-                className="text-[13px] font-semibold px-3 py-1 rounded-lg bg-green-100 text-green-700 hover:bg-green-200"
-              >
-                Orders
-              </Link>
-
-              {user?.role === "OWNER" && (
-                <Link
-                  href="/admin/analytics"
-                  className="text-[13px] font-semibold px-3 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
-                >
-                  Business Insight
-                </Link>
-              )}
-
-            </nav>
+    {user?.role==="OWNER" && (
+        <a
+            href="/admin/analytics"
+            style={{
+                fontSize:13,
+                fontWeight:600,
+                textDecoration:"none",
+                padding:"6px 12px",
+                borderRadius:999,
+                color:"#8A7E73",
+                background:"transparent"
+            }}
+        >
+            Analytics
+        </a>
+    )}
+</nav>
 
           </div>
 
