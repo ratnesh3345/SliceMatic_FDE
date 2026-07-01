@@ -81,6 +81,7 @@ export default function AnalyticsPage() {
   const [pizzas, setPizzas] = useState([]);
   const [toppings, setToppings] = useState([]);
   const [cost, setCost] = useState(null);
+  const [funnel, setFunnel] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [period, setPeriod] = useState(30);      // 7 | 30 | "all"
@@ -141,14 +142,15 @@ export default function AnalyticsPage() {
     if (!authed) return;
     (async () => {
       try {
-        const [a, b, c, d] = await Promise.all([
+        const [a, b, c, d, e] = await Promise.all([
           supabase.from("analytics_orders").select("*"),
           supabase.from("v_item_sales").select("*"),
           supabase.from("v_topping_sales").select("*"),
           supabase.from("cost_model").select("*").maybeSingle(),
+          supabase.from("v_customer_funnel").select("*").limit(500),
         ]);
         if (a.error) throw a.error;
-        setRows(a.data || []); setPizzas(b.data || []); setToppings(c.data || []); setCost(d.data || null);
+        setRows(a.data || []); setPizzas(b.data || []); setToppings(c.data || []); setCost(d.data || null); setFunnel(e?.data || []);
       } catch (e) { setErr(e.message || "Could not load analytics."); }
       finally { setLoading(false); }
     })();
@@ -344,11 +346,107 @@ if (!authed) {
           hint={topRank.length ? `${topRank[0].name} is the favourite; ${topRank[topRank.length - 1].name} barely sells.` : ""} />
       </div>
 
+      {/* 5 — Customer funnel */}
+      <Section n="5" title="Customer funnel" hint="where visitors drop off" />
+      <FunnelSection funnel={funnel} />
+
       <p style={{ fontSize: 11, color: MUTED, marginTop: 16 }}>
         Live from the <code>analytics_orders</code> view — {m.liveCount} live + {m.n - m.liveCount} seed orders modelled on the SliceMatic P&amp;L.
         Cost assumptions live in the editable <code>cost_model</code> table.
       </p>
     </Wrap>
+  );
+}
+
+
+function FunnelSection({ funnel }) {
+  const LINE = "#E7DDD2", BRAND = "#E11D74", GOOD = "#2F7A4D", MUTED = "#8A7E73", INK = "#1A1614";
+  const STAGES = [
+    { key: "viewed_landing",       label: "Landing viewed",    icon: "👀" },
+    { key: "submitted_details",    label: "Details submitted", icon: "📝" },
+    { key: "viewed_menu",          label: "Menu viewed",       icon: "🍕" },
+    { key: "added_item",           label: "Added to cart",     icon: "🛒" },
+    { key: "started_checkout",     label: "Checkout started",  icon: "💳" },
+    { key: "placed_order",         label: "Order placed",      icon: "✅" },
+  ];
+  if (!funnel.length) return (
+    <div style={{ background:"#fff", border:`1px solid ${LINE}`, borderRadius:16, padding:20 }}>
+      <p style={{ color:MUTED, fontSize:13, margin:0 }}>
+        No session data yet. Run <code>funnel.sql</code> in Supabase to create the <code>v_customer_funnel</code> view, then place a test order on the storefront.
+      </p>
+    </div>
+  );
+  const total = funnel.length;
+  const counts = {};
+  STAGES.forEach(s => { counts[s.key] = funnel.filter(r => r[s.key]).length; });
+  const dropOffs = STAGES.map((s, i) => {
+    const curr = counts[s.key];
+    const prev = i === 0 ? total : counts[STAGES[i-1].key];
+    const dropPct = prev > 0 ? Math.round((prev - curr) / prev * 100) : 0;
+    return { ...s, count: curr, pct: Math.round(curr / total * 100), dropPct };
+  });
+  const recent = [...funnel].sort((a, b) => new Date(b.first_seen) - new Date(a.first_seen)).slice(0, 8);
+  const convRate = Math.round((counts["placed_order"] || 0) / total * 100);
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+      <div style={{ background:"#fff", border:`1px solid ${LINE}`, borderRadius:16, padding:16 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+          <div style={{ fontSize:13, fontWeight:700 }}>{total} sessions tracked</div>
+          <div style={{ fontSize:12, color:MUTED }}>Overall conversion: <b style={{ color: convRate >= 30 ? GOOD : BRAND }}>{convRate}%</b></div>
+        </div>
+        {dropOffs.map((s, i) => (
+          <div key={s.key} style={{ marginBottom: i === dropOffs.length-1 ? 0 : 12 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:4 }}>
+              <span>{s.icon} {s.label}</span>
+              <span style={{ display:"flex", gap:12, color:MUTED }}>
+                <b style={{ color:INK }}>{s.count}</b>
+                <span>{s.pct}%</span>
+                {i > 0 && s.dropPct > 0 && <span style={{ color: s.dropPct > 40 ? "#b91c1c" : MUTED }}>−{s.dropPct}% drop</span>}
+              </span>
+            </div>
+            <div style={{ height:10, background:"#f2e9df", borderRadius:6 }}>
+              <div style={{ width:`${s.pct}%`, height:"100%", borderRadius:6, background: s.key==="placed_order" ? GOOD : BRAND, opacity:0.5+(s.pct/200) }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ background:"#fff", border:`1px solid ${LINE}`, borderRadius:16, padding:16 }}>
+        <div style={{ fontSize:13, fontWeight:700, marginBottom:12 }}>Recent sessions</div>
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+            <thead>
+              <tr style={{ color:MUTED }}>
+                {["Customer","Reached","Events","Order value","First seen"].map(h => (
+                  <th key={h} style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, borderBottom:`1px solid ${LINE}`, whiteSpace:"nowrap" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {recent.map((r) => (
+                <tr key={r.session_id} style={{ borderBottom:`1px solid ${LINE}` }}>
+                  <td style={{ padding:"8px 8px" }}>
+                    <div style={{ fontWeight:600 }}>{r.customer_name || <span style={{color:MUTED}}>Anonymous</span>}</div>
+                    <div style={{ color:MUTED, fontSize:11 }}>{r.phone || ""}</div>
+                  </td>
+                  <td style={{ padding:"8px 8px" }}>
+                    <span style={{ fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:999,
+                      background: r.funnel_stage?.startsWith("6") ? "#e7f3ec" : "#fdeef5",
+                      color: r.funnel_stage?.startsWith("6") ? GOOD : BRAND, whiteSpace:"nowrap" }}>
+                      {r.funnel_stage || "—"}
+                    </span>
+                  </td>
+                  <td style={{ padding:"8px 8px", color:MUTED }}>{r.total_events}</td>
+                  <td style={{ padding:"8px 8px" }}>{r.order_value ? <b>{"₹"+Math.round(r.order_value).toLocaleString("en-IN")}</b> : <span style={{color:MUTED}}>—</span>}</td>
+                  <td style={{ padding:"8px 8px", color:MUTED, whiteSpace:"nowrap" }}>
+                    {r.first_seen ? new Date(r.first_seen).toLocaleString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }
 
