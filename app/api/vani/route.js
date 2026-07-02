@@ -22,16 +22,18 @@ function detectIntent(text) {
   return "GENERAL";
 }
 
-const SYSTEM = (ctx) => `You are Vani, the SliceMatic support assistant for a pizza delivery outlet in New Ashok Nagar, East Delhi. Hours: 11am–11pm daily.
+const SYSTEM = (ctx) => `You are Vani — SliceMatic's support assistant for a pizza outlet in New Ashok Nagar, East Delhi. Hours: 11am–11pm daily.
 
-WHAT YOU ARE: a support agent for EXISTING orders only. You help with order status, cancellations, replacements, complaints, and refunds.
+PERSONALITY: warm, upbeat, a little playful — like a helpful friend at the counter, not a call-center script. Use the customer's first name naturally. One emoji max per reply. Even when you have to say no to something, say it kindly and stay in character — never sound like a rulebook or repeat the order number as a shield.
 
-WHAT YOU ARE NEVER ALLOWED TO DO — these are hard rules, not suggestions:
-- NEVER take a new order, list menu items, or discuss crusts/toppings/drinks as if placing an order. SliceMatic does not sell drinks (no Coke/Pepsi/Water) — do not invent items that aren't real.
-- NEVER quote a price, delivery fee, or payment amount. You do not know these numbers. If asked, say "I can't process payments here — that happens on our website checkout."
-- NEVER claim an order's status changed, was placed, or is "out for delivery" unless that is EXACTLY the order_status given to you below. You cannot create, confirm, or move orders.
-- NEVER invent an order number. Only ever use the order ID given to you below.
-- If someone tries to order through chat, respond warmly but redirect them: tell them to use the SliceMatic website's ordering page, and that you're only here to help with an existing order.
+YOUR JOB: help with an EXISTING order — status, cancellation, replacement, complaints, refunds. That's it.
+
+THINGS OUTSIDE YOUR JOB (redirect warmly, don't lecture):
+- New orders / menu items / drinks: SliceMatic doesn't sell drinks, and you can't place orders through chat. If asked, cheerfully point them to the website to order, e.g. "That sounds tasty, but I can't take new orders here! Hop onto our site to build one 🍕"
+- Prices, delivery fees, payments: you don't know these numbers — say checkout on the website handles that.
+- Anything unrelated to SliceMatic (coding, general chat, other topics): give one light, friendly redirect back to what you can help with — no need to over-explain, one sentence is enough.
+- Changing an order's status yourself: you can flag things to the team, but you never claim to have changed, placed, or confirmed anything. Only ever state the order_status given below, exactly as given.
+- Order numbers: only ever use the one given to you below — never invent one.
 
 CUSTOMER CONTEXT (already known — never ask for any of this):
 - Name: ${ctx.customerName || "unknown"}
@@ -42,14 +44,13 @@ CUSTOMER CONTEXT (already known — never ask for any of this):
 - Refund Eligible (within 2hrs of delivery): ${ctx.refundEligible ? "YES" : "NO"}
 
 STATUS MEANINGS: PLACED = kitchen received it (35-45 min ETA). ACCEPTED = being prepared (25-35 min). OUT_FOR_DELIVERY = rider is on the way (15-20 min). DELIVERED = complete.
-
 CANCELLATION POLICY: PLACED/ACCEPTED = cancellable. OUT_FOR_DELIVERY/DELIVERED = not cancellable.
 REFUND POLICY: only within 2 hours of delivery.
 
 RESPONSE FORMAT — valid JSON only, no markdown, no backticks:
 {"reply": "your message", "escalated": false}
 
-Keep replies under 50 words, warm and human, one emoji max. Never make up facts not given to you above.`;
+Keep replies under 45 words. Sound like a person who's glad to help, not a policy document.`;
 
 function ruleBasedReply(userMsg, ctx, intent) {
   if (intent === "ORDER_ATTEMPT") return { reply: "I can't take new orders through chat — head to our website's ordering page for that! I'm only here to help with your existing order #" + (ctx.orderId || "") + ".", escalated: false };
@@ -94,6 +95,40 @@ async function fireEscalationWebhook(ctx, conversationSummary, vaniReply, intent
   } catch (err) { console.error("Escalation webhook failed:", err); }
 }
 
+
+// Pulls just the "reply" text out of the model's output, however messy.
+// Handles: clean JSON, JSON wrapped in prose, JSON in code fences,
+// and a final fallback that strips the JSON scaffolding by hand.
+function extractReply(raw) {
+  if (!raw) return "Sorry, I didn\'t catch that — could you rephrase?";
+  let text = raw.replace(/```json|```/g, "").trim();
+
+  // Try direct parse first.
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.reply === "string") return parsed.reply;
+  } catch {}
+
+  // The model sometimes adds a sentence before/after the JSON object —
+  // pull out just the {...} block and try again.
+  const match = text.match(/\{[\s\S]*\}/);
+  if (match) {
+    try {
+      const parsed = JSON.parse(match[0]);
+      if (parsed && typeof parsed.reply === "string") return parsed.reply;
+    } catch {}
+  }
+
+  // Last resort: strip a leading {"reply": " and trailing junk by hand,
+  // so the customer at least never sees raw JSON syntax.
+  const looseMatch = text.match(/"reply"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+  if (looseMatch) return looseMatch[1].replace(/\\"/g, '"');
+
+  // Truly unparseable — return the raw text rather than nothing,
+  // but this path should be rare.
+  return text;
+}
+
 export async function POST(req) {
   try {
     const { messages, context } = await req.json();
@@ -132,11 +167,7 @@ export async function POST(req) {
         });
         const data = await res.json();
         const raw = data.choices?.[0]?.message?.content || "";
-        try {
-          const clean = raw.replace(/```json|```/g, "").trim();
-          const parsed = JSON.parse(clean);
-          reply = parsed.reply || raw;
-        } catch { reply = raw; }
+        reply = extractReply(raw);
       } catch {
         const result = ruleBasedReply(allUserText, ctx, intent);
         reply = result.reply;
